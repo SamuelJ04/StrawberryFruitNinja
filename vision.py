@@ -14,8 +14,8 @@ class VisionSystem:
     def __init__(
         self,
         device="/dev/video0",
-        capture_width=1920,
-        capture_height=1080,
+        capture_width=1280,
+        capture_height=720,
         capture_fps=30,
         show_masks=True,
         enable_gui=True,
@@ -30,6 +30,8 @@ class VisionSystem:
 
         self.prev_time = time.time()
         self.last_fps = 0.0
+
+        self.filtered_cut_y = None
 
         self.cap = cv2.VideoCapture(self.build_pipeline(), cv2.CAP_GSTREAMER)
         if not self.cap.isOpened():
@@ -89,16 +91,17 @@ class VisionSystem:
 
         lower_green = np.array([35, 40, 40], dtype=np.uint8)
         upper_green = np.array([95, 255, 255], dtype=np.uint8)
-        green_mask = cv2.inRange(hsv, lower_green, upper_green)
+        green_mask_raw = cv2.inRange(hsv, lower_green, upper_green)
 
         kernel3 = np.ones((3, 3), np.uint8)
         kernel5 = np.ones((5, 5), np.uint8)
+        kernel7 = np.ones((7,7), np.uint8)
 
         red_mask = cv2.morphologyEx(red_mask, cv2.MORPH_OPEN, kernel3)
         red_mask = cv2.morphologyEx(red_mask, cv2.MORPH_CLOSE, kernel5)
 
-        green_mask = cv2.morphologyEx(green_mask, cv2.MORPH_OPEN, kernel3)
-        green_mask = cv2.morphologyEx(green_mask, cv2.MORPH_CLOSE, kernel5)
+        green_mask_raw = cv2.morphologyEx(green_mask_raw, cv2.MORPH_OPEN, kernel5)
+        green_mask_raw = cv2.morphologyEx(green_mask_raw, cv2.MORPH_CLOSE, kernel7)
 
         berry_contour = self.largest_contour(red_mask, min_area=150)
 
@@ -112,30 +115,55 @@ class VisionSystem:
             berry_left = x
             berry_right = x + w
 
-            green_near_berry = np.zeros_like(green_mask)
+            # inside analyze(), after berry box is found
+            green_near_berry = np.zeros_like(green_mask_raw)
 
-            pad = 20
-            gx1 = max(0, berry_left - pad)
-            gx2 = min(green_mask.shape[1], berry_right + pad)
-            green_near_berry[:, gx1:gx2] = green_mask[:, gx1:gx2]
+            pad_x = 20
+            pad_y_top = 60
+            pad_y_bottom = 10
 
-            green_contour = self.largest_contour(green_near_berry, min_area=30)
+            gx1 = max(0, berry_left - pad_x)
+            gx2 = min(green_mask_raw.shape[1], berry_right + pad_x)
+            gy1 = max(0, y - pad_y_top)
+            gy2 = min(green_mask_raw.shape[0], y + pad_y_bottom)
+
+            green_near_berry[gy1:gy2, gx1:gx2] = green_mask_raw[gy1:gy2, gx1:gx2]
+
+            green_contour = self.largest_contour(green_near_berry, min_area=80)
 
             if green_contour is not None:
                 gx, gy, gw, gh = cv2.boundingRect(green_contour)
-                cut_y_roi = gy + gh + 3
+                cut_y_roi = gy + gh + 42
                 cut_y = ry1 + cut_y_roi
             else:
-                alpha = 0.18
+                alpha = 0.25
                 cut_y_roi = int(y + alpha * h)
                 cut_y = ry1 + cut_y_roi
 
+            # smooth cut_y
+            if cut_y is not None:
+                if self.filtered_cut_y is None:
+                    self.filtered_cut_y = cut_y
+                else:
+                    beta = 0.2
+                    new_cut = int(beta * cut_y + (1 - beta) * self.filtered_cut_y)
+
+                    if abs(new_cut - self.filtered_cut_y) < 4:
+                        new_cut = self.filtered_cut_y
+
+                    max_step = 5
+                    delta = new_cut - self.filtered_cut_y
+                    delta = max(-max_step, min(max_step, delta))
+                    self.filtered_cut_y = self.filtered_cut_y + delta
+
+                cut_y = self.filtered_cut_y
         return {
             "roi_box": (rx1, ry1, rx2, ry2),
             "berry_box": berry_box,
             "cut_y": cut_y,
             "red_mask": red_mask,
-            "green_mask": green_mask,
+            "green_mask_raw": green_mask_raw,
+            "green_mask": green_near_berry,
             "berry_contour": berry_contour,
             "roi_origin": (rx1, ry1),
         }

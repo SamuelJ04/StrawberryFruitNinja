@@ -110,4 +110,4 @@ class LinearActuator:
             self.rpwm.unexport()
             self.rpwm.unexport()
         finally:
-            GPIO.cleanup
+            GPIO.cleanup()
