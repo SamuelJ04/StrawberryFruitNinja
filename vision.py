@@ -107,6 +107,7 @@ class VisionSystem:
 
         berry_box = None
         cut_y = None
+        green_near_berry = np.zeros_like(green_mask_raw)
 
         if berry_contour is not None:
             x, y, w, h = cv2.boundingRect(berry_contour)
@@ -118,9 +119,9 @@ class VisionSystem:
             # inside analyze(), after berry box is found
             green_near_berry = np.zeros_like(green_mask_raw)
 
-            pad_x = 20
-            pad_y_top = 60
-            pad_y_bottom = 10
+            pad_x = 40
+            pad_y_top = 80
+            pad_y_bottom = 20
 
             gx1 = max(0, berry_left - pad_x)
             gx2 = min(green_mask_raw.shape[1], berry_right + pad_x)
@@ -157,6 +158,12 @@ class VisionSystem:
                     self.filtered_cut_y = self.filtered_cut_y + delta
 
                 cut_y = self.filtered_cut_y
+
+        else:
+            berry_box = None
+            cut_y = None
+            self.filtered_cut_y = None
+
         return {
             "roi_box": (rx1, ry1, rx2, ry2),
             "berry_box": berry_box,
@@ -174,7 +181,7 @@ class VisionSystem:
         self.prev_time = current_time
         return self.last_fps
 
-    def render(self, frame, result, state_name=None, actuator_status=None, target_cut_y=None):
+    def render(self, frame, result, state_name=None, actuator_status=None):
         display_frame = frame.copy()
 
         rx1, ry1, rx2, ry2 = result["roi_box"]
@@ -197,7 +204,7 @@ class VisionSystem:
                 2,
                 cv2.LINE_AA,
             )
-
+        '''
         if target_cut_y is not None:
             cv2.line(display_frame, (rx1, target_cut_y), (rx2, target_cut_y), (0, 255, 255), 2)
             cv2.putText(
@@ -210,6 +217,7 @@ class VisionSystem:
                 2,
                 cv2.LINE_AA,
             )
+        '''
 
         fps = self.update_fps()
         cv2.putText(
@@ -288,7 +296,7 @@ class VisionSystem:
             self.cap.release()
         self.close_windows()
 
-    def process_and_visualize(self, state_name=None, actuator_status=None, target_cut_y=None):
+    def process_and_visualize(self, state_name=None, actuator_status=None):
         frame = self.read()
         if frame is None:
             return None, None, None
@@ -299,7 +307,7 @@ class VisionSystem:
             result,
             state_name=state_name,
             actuator_status=actuator_status,
-            target_cut_y=target_cut_y,
+            #target_cut_y=target_cut_y,
         )
         self.show(display_frame, result)
         key = self.handle_keypress()

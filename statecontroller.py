@@ -19,8 +19,11 @@ class StrawberryMachineController:
         self.state = MachineState.IDLE
         self.last_state_change = time.time()
 
-        self.target_cut_y = 450
+        #self.target_cut_y = 450
         self.current_cut_y = None
+        self.cut_y_history = []
+        self.required_stable_frames = 5
+        self.cut_y_stability_tol = 6
 
         self.position_tolerance = 15
         self.actuator_speed = 65
@@ -35,7 +38,7 @@ class StrawberryMachineController:
         frame, result, key = self.vision.process_and_visualize(
             state_name=self.state.name,
             actuator_status=self.actuator.current_motion,
-            target_cut_y=self.target_cut_y,
+            #target_cut_y=self.target_cut_y,
         )
 
         if key == ord("q"):
@@ -93,13 +96,40 @@ class StrawberryMachineController:
             return
 
         cut_y = result.get("cut_y")
+
         if cut_y is None:
             print("No strawberry / cutline found yet")
+            self.cut_y_history.clear()
             return
 
-        self.current_cut_y = cut_y
-        print(f"Detected cut_y = {cut_y}")
-        self.set_state(MachineState.POSITIONING)
+        self.cut_y_history.append(cut_y)
+        
+        # Keep only the most recent N frames
+        if len(self.cut_y_history) > self.required_stable_frames:
+            self.cut_y_history.pop(0)
+
+        print(f"Searching... cut_y={cut_y}, history={self.cut_y_history}")
+
+        # Need enough frames before deciding stability
+        if len(self.cut_y_history) < self.required_stable_frames:
+            return
+
+        # Check if recent detections are close enough together
+        min_y = min(self.cut_y_history)
+        max_y = max(self.cut_y_history)
+
+        if (max_y - min_y) <= self.cut_y_stability_tol:
+            locked_cut_y = int(sum(self.cut_y_history) / len(self.cut_y_history))
+            self.current_cut_y = locked_cut_y
+
+            print(f"Locked stable cut_y = {locked_cut_y}")
+            self.cut_y_history.clear()
+            self.set_state(MachineState.POSITIONING)
+        else:
+            print(
+                f"cut_y not stable yet "
+                f"(spread={max_y - min_y}, tol={self.cut_y_stability_tol})"
+            )
 
     def handle_positioning(self):
         frame, result = self.get_vision_result()
@@ -115,8 +145,9 @@ class StrawberryMachineController:
             return
 
         self.current_cut_y = cut_y
-        error = self.target_cut_y - self.current_cut_y
-
+        #fix later
+        #error = self.target_cut_y - self.current_cut_y
+    '''
         print(f"Position error = {error}")
 
         if abs(error) <= self.position_tolerance:
@@ -129,6 +160,7 @@ class StrawberryMachineController:
             self.actuator.extend(self.actuator_speed)
         else:
             self.actuator.retract(self.actuator_speed)
+    '''
 
     def handle_ready_to_cut(self):
         self.actuator.stop()
