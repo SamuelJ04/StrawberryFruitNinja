@@ -96,6 +96,13 @@ class LinearActuator:
         # let this position be in mm
         self.current_position = 0
 
+        self.motion_active = False
+        self.motion_target = None
+        self.motion_direction = None
+        self.motion_start_time = None
+        self.motion_duration = 0.0
+        self.motion_start_position = self.current_position
+
     def setInitPos(self, duty = 100):
         print("Calibrating actuator for 15 seconds....")
         self.retract(duty)
@@ -122,7 +129,7 @@ class LinearActuator:
         #debug
         print(f"Current motion: {self.current_motion}")
   
-    def moveActuator(self, cut_y, buttons=None, step_time=0.02):
+    def start_move_to_cut_y(self, cut_y, duty=70):
         strawberryHeight = REGRESSIONA * cut_y + REGRESSIONB
 
         if strawberryHeight < 0:
@@ -133,31 +140,60 @@ class LinearActuator:
 
         if abs(positionDifference) < ACTUATORTOLERANCE:
             print(f"Within tolerance ({ACTUATORTOLERANCE} mm), ready.")
+            self.motion_active = False
             return True
 
-        direction = 1 if positionDifference > 0 else -1
-        total_time = abs(positionDifference) / ACTUATORVELOCITY
-        elapsed = 0.0
+        self.motion_target = strawberryHeight
+        self.motion_start_position = self.current_position
+        self.motion_duration = abs(positionDifference) / ACTUATORVELOCITY
+        self.motion_start_time = time.time()
 
-        if direction > 0:
-            self.extend(duty=70)
+        if positionDifference > 0:
+            self.extend(duty=duty)
+            self.motion_direction = "extend"
         else:
-            self.retract(duty=70)
+            self.retract(duty=duty)
+            self.motion_direction = "retract"
 
-        try:
-            while elapsed < total_time:
-                if buttons is not None and buttons.stop_requested:
-                    print("Actuator move interrupted by stop request")
-                    self.stop()
-                    return False
+        self.motion_active = True
 
-                time.sleep(step_time)
-                elapsed += step_time
-        finally:
+        print(f"Starting move:")
+        print(f"  cut_y = {cut_y}")
+        print(f"  current = {self.current_position:.2f} mm")
+        print(f"  target  = {self.motion_target:.2f} mm")
+        print(f"  delta   = {positionDifference:.2f} mm")
+        print(f"  time    = {self.motion_duration:.2f} s")
+        print(f"  dir     = {self.motion_direction}")
+
+        return None
+
+    def update_motion(self, buttons=None):
+        if not self.motion_active:
+            return True
+
+        if buttons is not None and buttons.consume_stop():
+            print("Actuator move interrupted by stop request")
+            self.stop_motion()
+            return False
+
+        elapsed = time.time() - self.motion_start_time
+
+        if elapsed >= self.motion_duration:
             self.stop()
+            self.current_position = self.motion_target
+            self.motion_active = False
+            print(f"Move complete. Current position = {self.current_position:.2f} mm")
+            return True
 
-        self.current_position = strawberryHeight
-        return True
+        return None
+
+    def stop_motion(self):
+        self.stop()
+        self.motion_active = False
+        self.motion_target = None
+        self.motion_direction = None
+        self.motion_start_time = None
+        self.motion_duration = 0.0
 
     def cleanup(self):
         try:

@@ -27,11 +27,18 @@ class StrawberryMachineController:
         self.required_stable_frames = 5
         self.cut_y_stability_tol = 6
 
+        self.positioning_started = False
+
+    def time_in_state(self):
+        return time.time() - self.last_state_change
+    
     def set_state(self, new_state):
         if new_state != self.state:
             print(f"STATE: {self.state.name} -> {new_state.name}")
             self.state = new_state
             self.last_state_change = time.time()
+        if new_state!= MachineState.POSITIONING:
+            self.positioning_started= False
         # Power logic
         if new_state in [
             MachineState.SEARCHING,
@@ -167,31 +174,57 @@ class StrawberryMachineController:
             return
 
         #moves actuator using moveActuator function
-        if self.actuator.moveActuator(self.current_cut_y, self.buttons):
+        #if self.actuator.moveActuator(self.current_cut_y, self.buttons):
+        #    self.set_state(MachineState.READY_TO_CUT)
+        #else: 
+        #    self.set_state(MachineState.ERROR)
+
+        if not self.positioning_started:
+            result = self.actuator.start_move_to_cut_y(self.current_cut_y, duty=70)
+
+            if result is True:
+                self.positioning_started = False
+                self.set_state(MachineState.READY_TO_CUT)
+                return
+            elif result is False:
+                self.positioning_started = False
+                self.set_state(MachineState.ERROR)
+                return
+            else:
+                self.positioning_started = True
+                return
+
+        result = self.actuator.update_motion(self.buttons)
+
+        if result is True:
+            self.positioning_started = False
             self.set_state(MachineState.READY_TO_CUT)
-        else: 
-            self.set_state(MachineState.ERROR)
+        elif result is False:
+            self.positioning_started = False
+            self.set_state(MachineState.STOPPED)
+
 
     def handle_ready_to_cut(self):
         self.actuator.stop()
         self.get_vision_result()
         print("Position reached. Ready to cut.")
-        time.sleep(0.3)
-        self.set_state(MachineState.CUTTING)
+        if self.time_in_state() >= 0.3:
+            self.set_state(MachineState.CUTTING)
 
     def handle_cutting(self):
         self.get_vision_result()
         print("Perform cut action here")
-        time.sleep(0.5)
-        self.set_state(MachineState.RESETTING)
+        if self.time_in_state() >= 0.5:
+            self.set_state(MachineState.RESETTING)
 
     def handle_resetting(self):
         self.get_vision_result()
         print("Resetting system")
-        self.actuator.retract(60)
-        time.sleep(1.0)
-        self.actuator.stop()
-        self.set_state(MachineState.IDLE)
+        if self.time_in_state() < 1.0:
+            self.actuator.retract(60)
+        else:
+            self.actuator.stop()
+            self.set_state(MachineState.IDLE)
 
     def handle_stopped(self):
         self.actuator.stop()
