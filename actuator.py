@@ -18,15 +18,18 @@ LPWM_CHIP = Path("/sys/class/pwm/pwmchip3") # pin 32
 PERIOD_NS = 1_000_000 # 1 kHz
 
 # A is slope/weight of regression (mm/pix) B is the y-intercept / bias (mm)
-REGRESSIONA=-0.18018879959
-REGRESSIONB=175.102117617
+REGRESSIONA=-0.15344313828
+REGRESSIONB=165.772356659
 
 #velocity at 70 duty cycle (mm/s)
-ACTUATORVELOCITY = 3.7
+ACTUATORVELOCITY = 3.76356164383562
 # won't move if the difference is this small
 ACTUATORTOLERANCE =2.5
 
-ACTUATORLOWEST = 75
+#cup height plus velcro
+ACTUATORLOWEST = 90
+#experimentally determined.... both in mm
+LOWESTCUTHEIGHT = 109
 
 #SysfsPWM (over my head and adopted from people who are much smarter than me)
 class SysfsPWM:
@@ -131,6 +134,9 @@ class LinearActuator:
   
     def start_move_to_cut_y(self, cut_y, duty=70):
         strawberryHeight = REGRESSIONA * cut_y + REGRESSIONB
+
+        if strawberryHeight < LOWESTCUTHEIGHT: 
+            strawberryHeight = LOWESTCUTHEIGHT
 
         if strawberryHeight < 0:
             print("Computed target height invalid")

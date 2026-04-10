@@ -73,7 +73,7 @@ class VisionSystem:
         H, W = frame.shape[:2]
 
         rx1 = int(W * 0.40)
-        ry1 = int(H * 0.30)
+        ry1 = int(H * 0.25)
         rx2 = int(W * 0.72)
         ry2 = int(H * 0.78)
 

@@ -28,6 +28,7 @@ class StrawberryMachineController:
         self.cut_y_stability_tol = 6
 
         self.positioning_started = False
+        self.time_position_found = time.time()
 
     def time_in_state(self):
         return time.time() - self.last_state_change
@@ -154,6 +155,7 @@ class StrawberryMachineController:
 
             print(f"Locked stable cut_y = {locked_cut_y}")
             self.cut_y_history.clear()
+            self.time_position_found = time.time()
             self.set_state(MachineState.POSITIONING)
         else:
             print(
@@ -207,24 +209,27 @@ class StrawberryMachineController:
     def handle_ready_to_cut(self):
         self.actuator.stop()
         self.get_vision_result()
-        print("Position reached. Ready to cut.")
-        if self.time_in_state() >= 0.3:
+
+        #print("Position reached. Ready to cut.")
+
+        if time.time() - self.time_position_found >= 30:
             self.set_state(MachineState.CUTTING)
 
     def handle_cutting(self):
         self.get_vision_result()
         print("Perform cut action here")
-        if self.time_in_state() >= 0.5:
+        if self.time_in_state() >= 12:
             self.set_state(MachineState.RESETTING)
 
     def handle_resetting(self):
         self.get_vision_result()
         print("Resetting system")
         if self.time_in_state() < 1.0:
-            self.actuator.retract(60)
+            #self.actuator.retract(60)
+            print('debug')
         else:
             self.actuator.stop()
-            self.set_state(MachineState.IDLE)
+            self.set_state(MachineState.SEARCHING)
 
     def handle_stopped(self):
         self.actuator.stop()
