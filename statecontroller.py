@@ -19,6 +19,8 @@ class StrawberryMachineController:
         self.state = MachineState.IDLE
         self.last_state_change = time.time()
 
+        actuator.setInitPos()
+
         #self.target_cut_y = 450
         self.current_cut_y = None
         self.cut_y_history = []
@@ -30,6 +32,16 @@ class StrawberryMachineController:
             print(f"STATE: {self.state.name} -> {new_state.name}")
             self.state = new_state
             self.last_state_change = time.time()
+        # Power logic
+        if new_state in [
+            MachineState.SEARCHING,
+            MachineState.POSITIONING,
+            MachineState.READY_TO_CUT,
+            MachineState.CUTTING,
+        ]:
+            self.buttons.power_on()
+        else:
+            self.buttons.power_off()
 
     def get_vision_result(self):
         frame, result, key = self.vision.process_and_visualize(
@@ -155,7 +167,7 @@ class StrawberryMachineController:
             return
 
         #moves actuator using moveActuator function
-        if self.actuator.moveActuator(self.current_cut_y):
+        if self.actuator.moveActuator(self.current_cut_y, self.buttons):
             self.set_state(MachineState.READY_TO_CUT)
         else: 
             self.set_state(MachineState.ERROR)

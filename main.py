@@ -11,12 +11,15 @@ from vision import VisionSystem
 from actuator import LinearActuator
 from button import ButtonPanel
 from statecontroller import StrawberryMachineController
+import Jetson.GPIO as GPIO
 
 
 def main():
     vision = None
     actuator = None
     buttons = None
+    GPIO.setmode(GPIO.BOARD)
+
 
     try:
         vision = VisionSystem()
@@ -34,10 +37,12 @@ def main():
 
         while True:
             controller.update()
-            time.sleep(0.03)
+            time.sleep(0.01)
 
     except KeyboardInterrupt:
         print("Exiting on keyboard interrupt")
+        GPIO.output(40, GPIO.LOW)
+        GPIO.cleanup()
 
     finally:
         if vision is not None:

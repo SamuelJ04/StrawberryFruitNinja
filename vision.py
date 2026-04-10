@@ -134,7 +134,7 @@ class VisionSystem:
 
             if green_contour is not None:
                 gx, gy, gw, gh = cv2.boundingRect(green_contour)
-                cut_y_roi = gy + gh + 42
+                cut_y_roi = gy + gh + 52
                 cut_y = ry1 + cut_y_roi
             else:
                 alpha = 0.25

@@ -12,12 +12,14 @@ class ButtonPanel:
         self.start_pin = start_pin
         self.stop_pin = stop_pin
         
-        self.tempPin = 40
+        self.power_pin = 40
         
         self.start_requested = False
         self.stop_requested = False
 
         GPIO.setmode(GPIO.BOARD)
+        GPIO.setup(self.power_pin, GPIO.OUT, initial=GPIO.LOW)  
+
         GPIO.setup(self.start_pin, GPIO.IN)
         GPIO.setup(self.stop_pin, GPIO.IN)
 
@@ -30,6 +32,7 @@ class ButtonPanel:
     
     def _on_stop(self, channel):
         self.start_requested = False
+        self.stop_requested = True
         print("Stop button pressed")
 
     def consume_start(self):
@@ -57,6 +60,12 @@ class ButtonPanel:
     def keyboardStop(self):
         self.stop_requested = True
         print("Stop button pressed via keyboard")
+
+    def power_on(self):
+        GPIO.output(self.power_pin, GPIO.HIGH)
+
+    def power_off(self):
+        GPIO.output(self.power_pin, GPIO.LOW)
 
     def cleanup(self):
         GPIO.cleanup()

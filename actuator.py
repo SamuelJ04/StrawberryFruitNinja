@@ -26,6 +26,8 @@ ACTUATORVELOCITY = 3.7
 # won't move if the difference is this small
 ACTUATORTOLERANCE =2.5
 
+ACTUATORLOWEST = 75
+
 #SysfsPWM (over my head and adopted from people who are much smarter than me)
 class SysfsPWM:
 
@@ -94,6 +96,13 @@ class LinearActuator:
         # let this position be in mm
         self.current_position = 0
 
+    def setInitPos(self, duty = 100):
+        print("Calibrating actuator for 15 seconds....")
+        self.retract(duty)
+        time.sleep(15)
+        self.stop()
+        self.current_position = ACTUATORLOWEST
+
     def extend(self, duty=70):
         self.lpwm.set_duty_percent(0)
         self.rpwm.set_duty_percent(duty)
@@ -113,29 +122,38 @@ class LinearActuator:
         #debug
         print(f"Current motion: {self.current_motion}")
   
-    def moveActuator(self, cut_y):
-        #thing to fix is ensuring current position is right kkkkkk
+    def moveActuator(self, cut_y, buttons=None, step_time=0.02):
         strawberryHeight = REGRESSIONA * cut_y + REGRESSIONB
 
-        # optional sanity bounds
         if strawberryHeight < 0:
             print("Computed target height invalid")
             return False
 
         positionDifference = strawberryHeight - self.current_position
-        movementTime = abs(positionDifference) / ACTUATORVELOCITY
 
         if abs(positionDifference) < ACTUATORTOLERANCE:
             print(f"Within tolerance ({ACTUATORTOLERANCE} mm), ready.")
             return True
 
-        if positionDifference > 0:
+        direction = 1 if positionDifference > 0 else -1
+        total_time = abs(positionDifference) / ACTUATORVELOCITY
+        elapsed = 0.0
+
+        if direction > 0:
             self.extend(duty=70)
-            time.sleep(movementTime)
-            self.stop()
         else:
             self.retract(duty=70)
-            time.sleep(movementTime)
+
+        try:
+            while elapsed < total_time:
+                if buttons is not None and buttons.stop_requested:
+                    print("Actuator move interrupted by stop request")
+                    self.stop()
+                    return False
+
+                time.sleep(step_time)
+                elapsed += step_time
+        finally:
             self.stop()
 
         self.current_position = strawberryHeight
@@ -147,6 +165,6 @@ class LinearActuator:
             self.rpwm.disable()
             self.lpwm.disable()
             self.rpwm.unexport()
-            self.rpwm.unexport()
+            self.lpwm.unexport()
         finally:
             GPIO.cleanup()
