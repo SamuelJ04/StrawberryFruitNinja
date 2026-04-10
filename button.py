@@ -12,6 +12,8 @@ class ButtonPanel:
         self.start_pin = start_pin
         self.stop_pin = stop_pin
         
+        self.tempPin = 40
+        
         self.start_requested = False
         self.stop_requested = False
 
@@ -48,6 +50,13 @@ class ButtonPanel:
         print(f"Stop Requested: {self.stop_requested}")
         return self.start_requested, self.stop_requested
 
+    def keyboardStart(self):
+        self.start_requested = True
+        print("Start button pressed via keyboard")
+
+    def keyboardStop(self):
+        self.stop_requested = True
+        print("Stop button pressed via keyboard")
 
     def cleanup(self):
         GPIO.cleanup()

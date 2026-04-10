@@ -17,6 +17,15 @@ RPWM_CHIP = Path("/sys/class/pwm/pwmchip2") # pin 33
 LPWM_CHIP = Path("/sys/class/pwm/pwmchip3") # pin 32
 PERIOD_NS = 1_000_000 # 1 kHz
 
+# A is slope/weight of regression (mm/pix) B is the y-intercept / bias (mm)
+REGRESSIONA=-0.18018879959
+REGRESSIONB=175.102117617
+
+#velocity at 70 duty cycle (mm/s)
+ACTUATORVELOCITY = 3.7
+# won't move if the difference is this small
+ACTUATORTOLERANCE =2.5
+
 #SysfsPWM (over my head and adopted from people who are much smarter than me)
 class SysfsPWM:
 
@@ -82,6 +91,8 @@ class LinearActuator:
 
         #set init state for moving
         self.current_motion = "stoppped"
+        # let this position be in mm
+        self.current_position = 0
 
     def extend(self, duty=70):
         self.lpwm.set_duty_percent(0)
@@ -101,6 +112,34 @@ class LinearActuator:
     def status(self):
         #debug
         print(f"Current motion: {self.current_motion}")
+  
+    def moveActuator(self, cut_y):
+        #thing to fix is ensuring current position is right kkkkkk
+        strawberryHeight = REGRESSIONA * cut_y + REGRESSIONB
+
+        # optional sanity bounds
+        if strawberryHeight < 0:
+            print("Computed target height invalid")
+            return False
+
+        positionDifference = strawberryHeight - self.current_position
+        movementTime = abs(positionDifference) / ACTUATORVELOCITY
+
+        if abs(positionDifference) < ACTUATORTOLERANCE:
+            print(f"Within tolerance ({ACTUATORTOLERANCE} mm), ready.")
+            return True
+
+        if positionDifference > 0:
+            self.extend(duty=70)
+            time.sleep(movementTime)
+            self.stop()
+        else:
+            self.retract(duty=70)
+            time.sleep(movementTime)
+            self.stop()
+
+        self.current_position = strawberryHeight
+        return True
 
     def cleanup(self):
         try:

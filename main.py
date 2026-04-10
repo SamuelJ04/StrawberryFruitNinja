@@ -30,6 +30,7 @@ def main():
         )
 
         print("Vision actuator, buttons, controller all successfully loaded!")
+        print("Press 'h' for a help menu of keyboard inputs!")
 
         while True:
             controller.update()

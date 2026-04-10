@@ -25,9 +25,6 @@ class StrawberryMachineController:
         self.required_stable_frames = 5
         self.cut_y_stability_tol = 6
 
-        self.position_tolerance = 15
-        self.actuator_speed = 65
-
     def set_state(self, new_state):
         if new_state != self.state:
             print(f"STATE: {self.state.name} -> {new_state.name}")
@@ -38,11 +35,25 @@ class StrawberryMachineController:
         frame, result, key = self.vision.process_and_visualize(
             state_name=self.state.name,
             actuator_status=self.actuator.current_motion,
-            #target_cut_y=self.target_cut_y,
         )
 
-        if key == ord("q"):
+        if key == ord("q") or key == 27:
             raise KeyboardInterrupt
+        elif key == ord("1"):
+            print("starting :)")
+            self.buttons.keyboardStart()
+        elif key == ord("2"):
+            print("stopping :)")
+            self.buttons.keyboardStop()
+        elif key == ord("h"):
+            print("---------------Help Menu---------------")
+            print("q or ESC - Terminate the program")
+            print("1 - Start system")
+            print("2 - Stop system")
+            print("h - Show help menu")
+            print("m - Toggle red & green masks on/off")
+            print("---------------------------------------")
+        
 
         if frame is None or result is None:
             return None, None
@@ -132,35 +143,22 @@ class StrawberryMachineController:
             )
 
     def handle_positioning(self):
-        frame, result = self.get_vision_result()
+        #frame, result = self.get_vision_result()
+        self.get_vision_result()
 
-        if frame is None or result is None:
+        #if frame is None or result is None:
+        #    self.set_state(MachineState.ERROR)
+        #    return
+
+        if self.current_cut_y is None:
             self.set_state(MachineState.ERROR)
             return
 
-        cut_y = result.get("cut_y")
-        if cut_y is None:
-            self.actuator.stop()
-            self.set_state(MachineState.SEARCHING)
-            return
-
-        self.current_cut_y = cut_y
-        #fix later
-        #error = self.target_cut_y - self.current_cut_y
-    '''
-        print(f"Position error = {error}")
-
-        if abs(error) <= self.position_tolerance:
-            self.actuator.stop()
+        #moves actuator using moveActuator function
+        if self.actuator.moveActuator(self.current_cut_y):
             self.set_state(MachineState.READY_TO_CUT)
-            return
-
-        # flip these if motion direction is backwards
-        if error > 0:
-            self.actuator.extend(self.actuator_speed)
-        else:
-            self.actuator.retract(self.actuator_speed)
-    '''
+        else: 
+            self.set_state(MachineState.ERROR)
 
     def handle_ready_to_cut(self):
         self.actuator.stop()
