@@ -24,12 +24,12 @@ REGRESSIONB=165.772356659
 #velocity at 70 duty cycle (mm/s)
 ACTUATORVELOCITY = 3.76356164383562
 # won't move if the difference is this small
-ACTUATORTOLERANCE =2.5
+ACTUATORTOLERANCE =1.5
 
 #cup height plus velcro
 ACTUATORLOWEST = 90
 #experimentally determined.... both in mm
-LOWESTCUTHEIGHT = 109
+LOWESTCUTHEIGHT = 108
 
 #SysfsPWM (over my head and adopted from people who are much smarter than me)
 class SysfsPWM:
@@ -148,6 +148,7 @@ class LinearActuator:
 
         if abs(positionDifference) < ACTUATORTOLERANCE:
             print(f"Within tolerance ({ACTUATORTOLERANCE} mm), ready.")
+            print(f"Strawberry Height 0 ({sterawberryHeight0})")
             self.motion_active = False
             return True
 
