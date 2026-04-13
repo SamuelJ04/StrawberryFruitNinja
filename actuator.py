@@ -101,6 +101,7 @@ class LinearActuator:
 
         self.motion_active = False
         self.motion_target = None
+        self.motion_unsafetarget = None
         self.motion_direction = None
         self.motion_start_time = None
         self.motion_duration = 0.0
@@ -134,6 +135,7 @@ class LinearActuator:
   
     def start_move_to_cut_y(self, cut_y, duty=70):
         strawberryHeight = REGRESSIONA * cut_y + REGRESSIONB
+        sterawberryHeight0 = strawberryHeight
 
         if strawberryHeight < LOWESTCUTHEIGHT: 
             strawberryHeight = LOWESTCUTHEIGHT
@@ -149,6 +151,7 @@ class LinearActuator:
             self.motion_active = False
             return True
 
+        self.motion_unsafetarget = sterawberryHeight0
         self.motion_target = strawberryHeight
         self.motion_start_position = self.current_position
         self.motion_duration = abs(positionDifference) / ACTUATORVELOCITY
@@ -166,6 +169,7 @@ class LinearActuator:
         print(f"Starting move:")
         print(f"  cut_y = {cut_y}")
         print(f"  current = {self.current_position:.2f} mm")
+        print(f"  potentially unsafe target = {self.motion_unsafetarget:.2f} mm")
         print(f"  target  = {self.motion_target:.2f} mm")
         print(f"  delta   = {positionDifference:.2f} mm")
         print(f"  time    = {self.motion_duration:.2f} s")

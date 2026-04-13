@@ -89,8 +89,8 @@ class VisionSystem:
         red_mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
         red_mask = cv2.bitwise_or(red_mask1, red_mask2)
 
-        lower_green = np.array([35, 40, 40], dtype=np.uint8)
-        upper_green = np.array([95, 255, 255], dtype=np.uint8)
+        lower_green = np.array([20, 20, 20], dtype=np.uint8)
+        upper_green = np.array([100, 255, 255], dtype=np.uint8)
         green_mask_raw = cv2.inRange(hsv, lower_green, upper_green)
 
         kernel3 = np.ones((3, 3), np.uint8)

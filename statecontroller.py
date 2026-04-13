@@ -129,7 +129,7 @@ class StrawberryMachineController:
         cut_y = result.get("cut_y")
 
         if cut_y is None:
-            print("No strawberry / cutline found yet")
+            #print("No strawberry / cutline found yet")
             self.cut_y_history.clear()
             return
 
@@ -212,21 +212,21 @@ class StrawberryMachineController:
 
         #print("Position reached. Ready to cut.")
 
-        if time.time() - self.time_position_found >= 30:
+        if time.time() - self.time_position_found >= 32:
             self.set_state(MachineState.CUTTING)
 
     def handle_cutting(self):
         self.get_vision_result()
-        print("Perform cut action here")
-        if self.time_in_state() >= 12:
+        #print("Perform cut action here")
+        if self.time_in_state() >= 6:
             self.set_state(MachineState.RESETTING)
 
     def handle_resetting(self):
         self.get_vision_result()
-        print("Resetting system")
+        #print("Resetting system")
         if self.time_in_state() < 1.0:
             #self.actuator.retract(60)
-            print('debug')
+            pass
         else:
             self.actuator.stop()
             self.set_state(MachineState.SEARCHING)
@@ -234,13 +234,13 @@ class StrawberryMachineController:
     def handle_stopped(self):
         self.actuator.stop()
         self.get_vision_result()
-        print("Machine stopped. Press start to resume.")
+        #print("Machine stopped. Press start to resume.")
         if self.buttons.consume_start():
             self.set_state(MachineState.SEARCHING)
 
     def handle_error(self):
         self.actuator.stop()
         self.get_vision_result()
-        print("System error. Press start to retry.")
+        #print("System error. Press start to retry.")
         if self.buttons.consume_start():
             self.set_state(MachineState.IDLE)
