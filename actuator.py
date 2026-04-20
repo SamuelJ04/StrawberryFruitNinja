@@ -29,7 +29,7 @@ ACTUATORTOLERANCE =1.5
 #cup height plus velcro
 ACTUATORLOWEST = 90
 #experimentally determined.... both in mm
-LOWESTCUTHEIGHT = 108
+LOWESTCUTHEIGHT = 110
 
 #SysfsPWM (over my head and adopted from people who are much smarter than me)
 class SysfsPWM:

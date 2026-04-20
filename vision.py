@@ -95,7 +95,7 @@ class VisionSystem:
 
         kernel3 = np.ones((3, 3), np.uint8)
         kernel5 = np.ones((5, 5), np.uint8)
-        kernel7 = np.ones((7,7), np.uint8)
+        kernel7 = np.ones((7, 7), np.uint8)
 
         red_mask = cv2.morphologyEx(red_mask, cv2.MORPH_OPEN, kernel3)
         red_mask = cv2.morphologyEx(red_mask, cv2.MORPH_CLOSE, kernel5)
@@ -106,7 +106,8 @@ class VisionSystem:
         berry_contour = self.largest_contour(red_mask, min_area=150)
 
         berry_box = None
-        cut_y = None
+        cut_y_raw = None
+        cut_y_filtered = None
         green_near_berry = np.zeros_like(green_mask_raw)
 
         if berry_contour is not None:
@@ -115,9 +116,6 @@ class VisionSystem:
 
             berry_left = x
             berry_right = x + w
-
-            # inside analyze(), after berry box is found
-            green_near_berry = np.zeros_like(green_mask_raw)
 
             pad_x = 40
             pad_y_top = 80
@@ -135,19 +133,18 @@ class VisionSystem:
             if green_contour is not None:
                 gx, gy, gw, gh = cv2.boundingRect(green_contour)
                 cut_y_roi = gy + gh + 52
-                cut_y = ry1 + cut_y_roi
+                cut_y_raw = ry1 + cut_y_roi
             else:
                 alpha = 0.25
                 cut_y_roi = int(y + alpha * h)
-                cut_y = ry1 + cut_y_roi
+                cut_y_raw = ry1 + cut_y_roi
 
-            # smooth cut_y
-            if cut_y is not None:
+            if cut_y_raw is not None:
                 if self.filtered_cut_y is None:
-                    self.filtered_cut_y = cut_y
+                    self.filtered_cut_y = cut_y_raw
                 else:
                     beta = 0.2
-                    new_cut = int(beta * cut_y + (1 - beta) * self.filtered_cut_y)
+                    new_cut = int(beta * cut_y_raw + (1 - beta) * self.filtered_cut_y)
 
                     if abs(new_cut - self.filtered_cut_y) < 4:
                         new_cut = self.filtered_cut_y
@@ -157,17 +154,16 @@ class VisionSystem:
                     delta = max(-max_step, min(max_step, delta))
                     self.filtered_cut_y = self.filtered_cut_y + delta
 
-                cut_y = self.filtered_cut_y
+                cut_y_filtered = self.filtered_cut_y
 
         else:
-            berry_box = None
-            cut_y = None
             self.filtered_cut_y = None
 
         return {
             "roi_box": (rx1, ry1, rx2, ry2),
             "berry_box": berry_box,
-            "cut_y": cut_y,
+            "cut_y_raw": cut_y_raw,
+            "cut_y": cut_y_filtered,
             "red_mask": red_mask,
             "green_mask_raw": green_mask_raw,
             "green_mask": green_near_berry,

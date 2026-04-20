@@ -24,8 +24,11 @@ class StrawberryMachineController:
         #self.target_cut_y = 450
         self.current_cut_y = None
         self.cut_y_history = []
-        self.required_stable_frames = 5
-        self.cut_y_stability_tol = 6
+        self.required_stable_frames = 8
+        self.cut_y_stability_tol = 8
+
+        self.first_detection_time = None
+        self.min_settle_time = 0.35
 
         self.positioning_started = False
         self.time_position_found = time.time()
@@ -126,42 +129,56 @@ class StrawberryMachineController:
             self.set_state(MachineState.ERROR)
             return
 
-        cut_y = result.get("cut_y")
+        cut_y_raw = result.get("cut_y_raw")
+        berry_box = result.get("berry_box")
 
-        if cut_y is None:
-            #print("No strawberry / cutline found yet")
+        if cut_y_raw is None or berry_box is None:
             self.cut_y_history.clear()
+            self.first_detection_time = None
             return
 
-        self.cut_y_history.append(cut_y)
-        
-        # Keep only the most recent N frames
+        bx, by, bw, bh = berry_box
+
+        # Optional: reject tiny berries that are just entering view
+        if bh < 65:
+            self.cut_y_history.clear()
+            self.first_detection_time = None
+            print(f"Berry detected but not settled yet (height={bh})")
+            return
+
+        if self.first_detection_time is None:
+            self.first_detection_time = time.time()
+
+        self.cut_y_history.append(cut_y_raw)
+
         if len(self.cut_y_history) > self.required_stable_frames:
             self.cut_y_history.pop(0)
 
-        print(f"Searching... cut_y={cut_y}, history={self.cut_y_history}")
+        print(f"Searching... raw cut_y={cut_y_raw}, history={self.cut_y_history}")
 
-        # Need enough frames before deciding stability
         if len(self.cut_y_history) < self.required_stable_frames:
             return
 
-        # Check if recent detections are close enough together
         min_y = min(self.cut_y_history)
         max_y = max(self.cut_y_history)
+        spread = max_y - min_y
+        settle_time = time.time() - self.first_detection_time
 
-        if (max_y - min_y) <= self.cut_y_stability_tol:
+        if settle_time < self.min_settle_time:
+            print(f"Waiting for settle time... {settle_time:.2f}/{self.min_settle_time:.2f}s")
+            return
+
+        if spread <= self.cut_y_stability_tol:
             locked_cut_y = int(sum(self.cut_y_history) / len(self.cut_y_history))
             self.current_cut_y = locked_cut_y
 
             print(f"Locked stable cut_y = {locked_cut_y}")
             self.cut_y_history.clear()
+            self.first_detection_time = None
             self.time_position_found = time.time()
             self.set_state(MachineState.POSITIONING)
         else:
-            print(
-                f"cut_y not stable yet "
-                f"(spread={max_y - min_y}, tol={self.cut_y_stability_tol})"
-            )
+            print(f"cut_y not stable yet (spread={spread}, tol={self.cut_y_stability_tol})")
 
     def handle_positioning(self):
         #frame, result = self.get_vision_result()
