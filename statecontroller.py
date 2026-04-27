@@ -8,6 +8,7 @@
 # -------------------------------------------------------------
 import time
 from states import MachineState
+from actuator import ACTUATORVELOCITY, REGRESSIONA, REGRESSIONB, LOWESTCUTHEIGHT
 
 
 class StrawberryMachineController:
@@ -21,8 +22,25 @@ class StrawberryMachineController:
 
         actuator.setInitPos()
 
+        #new changes
+        self.cut_queue = []
+        self.active_job = None
+        self.next_job_id = 1
+
+        self.conveyor_delay = 32.0
+        self.cut_duration = 5.0
+        self.reset_duration = 1.0
+        self.pre_position_margin = 1.0
+        self.last_accepted_berry_time = 0.0
+        self.new_berry_cooldown = 1.0
+
+        #duplicate prevention latch
+        self.berry_locked_in_view = False
+        self.release_height_threshold = 45
+
+
         #self.target_cut_y = 450
-        self.current_cut_y = None
+        #self.current_cut_y = None
         self.cut_y_history = []
         self.required_stable_frames = 8
         self.cut_y_stability_tol = 8
@@ -30,8 +48,10 @@ class StrawberryMachineController:
         self.first_detection_time = None
         self.min_settle_time = 0.35
 
-        self.positioning_started = False
+        #self.positioning_started = False
         self.time_position_found = time.time()
+
+        self.queue_overlay = ""
 
     def time_in_state(self):
         return time.time() - self.last_state_change
@@ -41,15 +61,8 @@ class StrawberryMachineController:
             print(f"STATE: {self.state.name} -> {new_state.name}")
             self.state = new_state
             self.last_state_change = time.time()
-        if new_state!= MachineState.POSITIONING:
-            self.positioning_started= False
-        # Power logic
-        if new_state in [
-            MachineState.SEARCHING,
-            MachineState.POSITIONING,
-            MachineState.READY_TO_CUT,
-            MachineState.CUTTING,
-        ]:
+
+        if new_state == MachineState.RUNNING:
             self.buttons.power_on()
         else:
             self.buttons.power_off()
@@ -58,6 +71,7 @@ class StrawberryMachineController:
         frame, result, key = self.vision.process_and_visualize(
             state_name=self.state.name,
             actuator_status=self.actuator.current_motion,
+            queue_lines=self.build_queue_overlay(),
         )
 
         if key == ord("q") or key == 27:
@@ -94,20 +108,8 @@ class StrawberryMachineController:
         if self.state == MachineState.IDLE:
             self.handle_idle()
 
-        elif self.state == MachineState.SEARCHING:
-            self.handle_searching()
-
-        elif self.state == MachineState.POSITIONING:
-            self.handle_positioning()
-
-        elif self.state == MachineState.READY_TO_CUT:
-            self.handle_ready_to_cut()
-
-        elif self.state == MachineState.CUTTING:
-            self.handle_cutting()
-
-        elif self.state == MachineState.RESETTING:
-            self.handle_resetting()
+        elif self.state == MachineState.RUNNING:
+            self.handle_running()
 
         elif self.state == MachineState.STOPPED:
             self.handle_stopped()
@@ -120,8 +122,206 @@ class StrawberryMachineController:
         self.get_vision_result()  # still show GUI while idle
 
         if self.buttons.consume_start():
-            self.set_state(MachineState.SEARCHING)
+            self.cut_queue.clear()
+            self.active_job = None
+            self.cut_y_history.clear()
+            self.first_detection_time = None
+            self.last_accepted_berry_time = 0.0
+            self.set_state(MachineState.RUNNING)
 
+    def handle_running(self):
+        frame, result = self.get_vision_result()
+
+        if frame is None or result is None:
+            self.set_state(MachineState.ERROR)
+            return
+
+        self.update_detection_queue(result)
+        self.update_active_job()
+
+        # optional debug
+        if self.active_job is not None:
+            pass
+            #print(f"ACTIVE JOB: {self.active_job['id']} state={self.active_job['stage']}")
+        if self.cut_queue:
+            pass
+            #print(f"QUEUE LEN: {len(self.cut_queue)}")
+
+    def update_detection_queue(self, result):
+        cut_y_raw = result.get("cut_y_raw")
+        berry_box = result.get("berry_box")
+
+        # -------------------------------------------------
+        # No berry visible -> fully reset tracking and latch
+        # -------------------------------------------------
+        if berry_box is None or cut_y_raw is None:
+            self.cut_y_history.clear()
+            self.first_detection_time = None
+            self.berry_locked_in_view = False
+            return
+
+        bx, by, bw, bh = berry_box
+
+        # -------------------------------------------------
+        # If the currently latched berry has mostly left view,
+        # release the latch so the next berry can be queued
+        # -------------------------------------------------
+        if self.berry_locked_in_view:
+            if bh <= self.release_height_threshold:
+                self.berry_locked_in_view = False
+                self.cut_y_history.clear()
+                self.first_detection_time = None
+            return
+
+        # -------------------------------------------------
+        # Reject berry still entering / too small
+        # -------------------------------------------------
+        if bh < 65:
+            self.cut_y_history.clear()
+            self.first_detection_time = None
+            return
+
+        # -------------------------------------------------
+        # Stability logic
+        # -------------------------------------------------
+        if self.first_detection_time is None:
+            self.first_detection_time = time.time()
+
+        self.cut_y_history.append(cut_y_raw)
+
+        if len(self.cut_y_history) > self.required_stable_frames:
+            self.cut_y_history.pop(0)
+
+        if len(self.cut_y_history) < self.required_stable_frames:
+            return
+
+        min_y = min(self.cut_y_history)
+        max_y = max(self.cut_y_history)
+        spread = max_y - min_y
+        settle_time = time.time() - self.first_detection_time
+
+        if settle_time < self.min_settle_time:
+            return
+
+        if spread > self.cut_y_stability_tol:
+            return
+
+        now = time.time()
+
+        # optional extra cooldown safety
+        if now - self.last_accepted_berry_time < self.new_berry_cooldown:
+            return
+
+        locked_cut_y = int(sum(self.cut_y_history) / len(self.cut_y_history))
+
+        job = {
+            "id": self.next_job_id,
+            "cut_y": locked_cut_y,
+            "queued_at": now,
+            "arrival_time": now + self.conveyor_delay,
+            "stage": "queued",
+            "positioning_started": False,
+            "cut_start": None,
+            "reset_start": None,
+        }
+
+        self.cut_queue.append(job)
+        self.next_job_id += 1
+        self.last_accepted_berry_time = now
+
+        # VERY IMPORTANT: latch this visible berry so it cannot be queued again
+        self.berry_locked_in_view = True
+
+        print(f"Queued berry #{job['id']} with cut_y={locked_cut_y}, arrival={job['arrival_time']:.2f}")
+
+        self.cut_y_history.clear()
+        self.first_detection_time = None
+
+    
+    def estimate_move_time(self, cut_y):
+        strawberryHeight = REGRESSIONA * cut_y + REGRESSIONB
+        if strawberryHeight < LOWESTCUTHEIGHT:
+            strawberryHeight = LOWESTCUTHEIGHT
+
+        distance = abs(strawberryHeight - self.actuator.current_position)
+        base_time = distance / ACTUATORVELOCITY
+        val = base_time * 1.15 + 0.20
+        return val
+    
+    def update_active_job(self):
+        now = time.time()
+
+        # pick next job if none active
+        if self.active_job is None and self.cut_queue:
+            self.active_job = self.cut_queue.pop(0)
+            print(f"Activated berry #{self.active_job['id']}")
+
+        if self.active_job is None:
+            return
+
+        job = self.active_job
+
+        # -------------------------
+        # STAGE 1: queued -> positioning
+        # -------------------------
+        if job["stage"] == "queued":
+            move_time = self.estimate_move_time(job["cut_y"])
+            start_move_time = job["arrival_time"] - move_time - self.pre_position_margin
+
+            if now >= start_move_time:
+                result = self.actuator.start_move_to_cut_y(job["cut_y"], duty=70)
+
+                if result is True:
+                    job["stage"] = "armed"
+                    print(f"Berry #{job['id']} already in position")
+                elif result is False:
+                    self.set_state(MachineState.ERROR)
+                    return
+                else:
+                    job["stage"] = "positioning"
+                    print(f"Berry #{job['id']} started positioning")
+
+        # -------------------------
+        # STAGE 2: positioning
+        # -------------------------
+        elif job["stage"] == "positioning":
+            result = self.actuator.update_motion(self.buttons)
+
+            if result is True:
+                job["stage"] = "armed"
+                print(f"Berry #{job['id']} positioned and armed")
+            elif result is False:
+                self.set_state(MachineState.STOPPED)
+                return
+
+        # -------------------------
+        # STAGE 3: armed -> cutting
+        # -------------------------
+        elif job["stage"] == "armed":
+            if now >= job["arrival_time"]:
+                job["cut_start"] = now
+                job["stage"] = "cutting"
+                print(f"Berry #{job['id']} cutting")
+
+        # -------------------------
+        # STAGE 4: cutting -> resetting
+        # -------------------------
+        elif job["stage"] == "cutting":
+            if now - job["cut_start"] >= self.cut_duration:
+                job["reset_start"] = now
+                job["stage"] = "resetting"
+                print(f"Berry #{job['id']} resetting")
+
+        # -------------------------
+        # STAGE 5: resetting -> done
+        # -------------------------
+        elif job["stage"] == "resetting":
+            if now - job["reset_start"] >= self.reset_duration:
+                print(f"Berry #{job['id']} complete")
+                self.active_job = None
+
+    
+    '''
     def handle_searching(self):
         frame, result = self.get_vision_result()
 
@@ -247,17 +447,54 @@ class StrawberryMachineController:
         else:
             self.actuator.stop()
             self.set_state(MachineState.SEARCHING)
-
+    '''
     def handle_stopped(self):
         self.actuator.stop()
         self.get_vision_result()
         #print("Machine stopped. Press start to resume.")
         if self.buttons.consume_start():
-            self.set_state(MachineState.SEARCHING)
+            self.cut_queue.clear()
+            self.active_job = None
+            self.cut_y_history.clear()
+            self.first_detection_time = None
+            self.set_state(MachineState.RUNNING)
+
 
     def handle_error(self):
         self.actuator.stop()
         self.get_vision_result()
         #print("System error. Press start to retry.")
         if self.buttons.consume_start():
+            self.cut_queue.clear()
+            self.active_job = None
+            self.cut_y_history.clear()
+            self.first_detection_time = None
             self.set_state(MachineState.IDLE)
+
+    def log_event(self, message):
+        print(f"[{time.strftime('%H:%M:%S')}] {message}")
+
+    def build_queue_overlay(self):
+        lines = []
+
+        # line 1: active berry
+        if self.active_job is not None:
+            lines.append(
+                f"ACTIVE: #{self.active_job['id']} | {self.active_job['stage']} | cut_y={self.active_job['cut_y']}"
+            )
+        else:
+            lines.append("ACTIVE: none")
+
+        # line 2: queued berries
+        if self.cut_queue:
+            queued_ids = [f"#{job['id']}" for job in self.cut_queue[:5]]
+            queue_text = " ".join(queued_ids)
+
+            if len(self.cut_queue) > 5:
+                queue_text += " ..."
+
+            lines.append(f"QUEUE ({len(self.cut_queue)}): {queue_text}")
+        else:
+            lines.append("QUEUE (0): empty")
+
+        return lines

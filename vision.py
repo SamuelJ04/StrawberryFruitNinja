@@ -177,7 +177,7 @@ class VisionSystem:
         self.prev_time = current_time
         return self.last_fps
 
-    def render(self, frame, result, state_name=None, actuator_status=None):
+    def render(self, frame, result, state_name=None, actuator_status=None, queue_lines=None):
         display_frame = frame.copy()
 
         rx1, ry1, rx2, ry2 = result["roi_box"]
@@ -200,6 +200,38 @@ class VisionSystem:
                 2,
                 cv2.LINE_AA,
             )
+        if queue_lines is not None and len(queue_lines) > 0:
+            panel_x = 15
+            panel_y = 135
+            panel_w = 490
+            panel_h = 20 + 32 * len(queue_lines)
+
+            cv2.rectangle(
+                display_frame,
+                (panel_x, panel_y),
+                (panel_x + panel_w, panel_y + panel_h),
+                (40, 40, 40),
+                -1
+            )
+            cv2.rectangle(
+                display_frame,
+                (panel_x, panel_y),
+                (panel_x + panel_w, panel_y + panel_h),
+                (255, 255, 255),
+                2
+            )
+
+            for i, line in enumerate(queue_lines):
+                cv2.putText(
+                    display_frame,
+                    line,
+                    (panel_x + 12, panel_y + 30 + i * 32),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.7,
+                    (255, 255, 255),
+                    2,
+                    cv2.LINE_AA,
+                )
         '''
         if target_cut_y is not None:
             cv2.line(display_frame, (rx1, target_cut_y), (rx2, target_cut_y), (0, 255, 255), 2)
@@ -292,7 +324,7 @@ class VisionSystem:
             self.cap.release()
         self.close_windows()
 
-    def process_and_visualize(self, state_name=None, actuator_status=None):
+    def process_and_visualize(self, state_name=None, actuator_status=None, queue_lines=None):
         frame = self.read()
         if frame is None:
             return None, None, None
@@ -303,6 +335,7 @@ class VisionSystem:
             result,
             state_name=state_name,
             actuator_status=actuator_status,
+            queue_lines=queue_lines,
             #target_cut_y=target_cut_y,
         )
         self.show(display_frame, result)
