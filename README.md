@@ -169,7 +169,7 @@ This project was developed as part of:
 
 ## Authors
 
-Samuel Vinson  
+Samuel Vinson, Jabe Lovett, Alex Salonen, Kayla King  
 Biological & Agricultural Engineering  
 University of Arkansas
 
